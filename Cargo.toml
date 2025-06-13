@@ -1,0 +1,26 @@
+[package]
+name = "cim-infrastructure"
+version = "0.1.0"
+edition = "2021"
+authors = ["CIM Team"]
+description = "Infrastructure components for the Composable Information Machine"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+# Internal dependencies
+cim-core-domain = { path = "../cim-core-domain" }
+
+# External dependencies
+async-nats = "0.38"
+async-trait = "0.1"
+futures = "0.3"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.11", features = ["v4", "serde"] }
+thiserror = "2.0"
+tokio = { version = "1.42", features = ["full"] }
+tracing = "0.1"
+
+[dev-dependencies]
+tokio-test = "0.4"
+futures = "0.3"
