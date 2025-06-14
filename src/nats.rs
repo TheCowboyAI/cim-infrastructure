@@ -37,7 +37,6 @@ impl Default for NatsConfig {
 #[derive(Clone)]
 pub struct NatsClient {
     client: Client,
-    config: Arc<NatsConfig>,
 }
 
 impl NatsClient {
@@ -59,7 +58,6 @@ impl NatsClient {
 
         Ok(Self {
             client,
-            config: Arc::new(config),
         })
     }
 
