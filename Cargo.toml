@@ -1,6 +1,6 @@
 [package]
 name = "cim-infrastructure"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 authors = ["CIM Team"]
 description = "Infrastructure components for the Composable Information Machine"
