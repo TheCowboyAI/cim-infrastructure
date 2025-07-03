@@ -1,11 +1,13 @@
 //! Tests for NATS infrastructure aligned with user stories
 
-use cim_infrastructure::{NatsClient, NatsConfig, MessageHandler, InfrastructureError, InfrastructureResult};
 use async_trait::async_trait;
+use cim_infrastructure::{
+    InfrastructureError, InfrastructureResult, MessageHandler, NatsClient, NatsConfig,
+};
+use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
-use serde::{Serialize, Deserialize};
-use serde_json::Value;
 
 /// User Story: F7 - NATS Message Bus Integration
 ///

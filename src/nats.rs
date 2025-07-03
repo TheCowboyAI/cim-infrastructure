@@ -1,11 +1,11 @@
 //! NATS client abstraction for messaging infrastructure
 
 use async_nats::{Client, ConnectOptions, Subscriber};
-use serde::{Deserialize, Serialize};
-use std::time::Duration;
-use std::sync::Arc;
-use tracing::{debug, error, info};
 use futures::StreamExt;
+use serde::{Deserialize, Serialize};
+use std::sync::Arc;
+use std::time::Duration;
+use tracing::{debug, error, info};
 
 use crate::errors::{InfrastructureError, InfrastructureResult};
 
@@ -47,18 +47,13 @@ impl NatsClient {
             .connection_timeout(config.connect_timeout)
             .request_timeout(Some(config.request_timeout));
 
-        let client = async_nats::connect_with_options(
-            config.servers.join(","),
-            connect_options,
-        )
-        .await
-        .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+        let client = async_nats::connect_with_options(config.servers.join(","), connect_options)
+            .await
+            .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
 
         info!("Connected to NATS at {:?}", config.servers);
 
-        Ok(Self {
-            client,
-        })
+        Ok(Self { client })
     }
 
     /// Publish a message to a subject
@@ -79,7 +74,8 @@ impl NatsClient {
 
     /// Subscribe to a subject
     pub async fn subscribe(&self, subject: &str) -> InfrastructureResult<Subscriber> {
-        let subscriber = self.client
+        let subscriber = self
+            .client
             .subscribe(subject.to_string())
             .await
             .map_err(|e| InfrastructureError::NatsSubscribe(e.to_string()))?;
@@ -96,7 +92,8 @@ impl NatsClient {
     {
         let payload = serde_json::to_vec(request)?;
 
-        let response = self.client
+        let response = self
+            .client
             .request(subject.to_string(), payload.into())
             .await
             .map_err(|e| InfrastructureError::NatsPublish(e.to_string()))?;
@@ -134,9 +131,7 @@ pub struct MessageProcessor {
 impl MessageProcessor {
     /// Create a new message processor
     pub fn new(client: NatsClient) -> Self {
-        Self {
-            client,
-        }
+        Self { client }
     }
 
     /// Start processing messages for a specific handler

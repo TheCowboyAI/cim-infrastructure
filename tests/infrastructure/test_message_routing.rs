@@ -129,14 +129,14 @@ impl InfrastructureRouter {
             }
         }
         
-        Err(format!("No handler found for subject: {}", message.subject))
+        Err(format!("No handler found for subject: {message.subject}"))
     }
 
     pub fn deliver_message(&self, message: RoutingMessage) -> Result<(), String> {
         let handler_id = self.route_message(message.clone())?;
         
         let handler = self.handlers.get(&handler_id)
-            .ok_or_else(|| format!("Handler not found: {}", handler_id))?;
+            .ok_or_else(|| format!("Handler not found: {handler_id}"))?;
         
         handler.handle(message)?;
         

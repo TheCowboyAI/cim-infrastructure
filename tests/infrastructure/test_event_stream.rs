@@ -84,7 +84,7 @@ impl InfrastructureEventStore {
     ) -> Result<InfrastructureCid, String> {
         // Serialize event for CID calculation
         let event_bytes = serde_json::to_vec(&event)
-            .map_err(|e| format!("Serialization error: {}", e))?;
+            .map_err(|e| format!("Serialization error: {e}"))?;
         
         let cid = InfrastructureCid::from_data(&event_bytes, previous_cid.as_ref());
         
@@ -102,7 +102,7 @@ impl InfrastructureEventStore {
 
     pub fn validate_chain(&self, aggregate_id: &str) -> Result<(InfrastructureCid, InfrastructureCid, usize), String> {
         let indices = self.streams.get(aggregate_id)
-            .ok_or_else(|| format!("No events for aggregate {}", aggregate_id))?;
+            .ok_or_else(|| format!("No events for aggregate {aggregate_id}"))?;
         
         if indices.is_empty() {
             return Err("No events in stream".to_string());
@@ -114,7 +114,7 @@ impl InfrastructureEventStore {
             let (_, expected_prev_cid, _) = &self.events[indices[i - 1]];
             
             if prev_cid.as_ref() != Some(expected_prev_cid) {
-                return Err(format!("Chain broken at position {} for aggregate {}", i, aggregate_id));
+                return Err(format!("Chain broken at position {i} for aggregate {aggregate_id}"));
             }
         }
 
@@ -270,9 +270,9 @@ mod tests {
         // Add events for infrastructure aggregate
         for i in 1..=3 {
             let event = InfrastructureEventData {
-                event_id: format!("evt_{}", i),
+                event_id: format!("evt_{i}"),
                 aggregate_id: aggregate_id.to_string(),
-                event_type: format!("Event{}", i),
+                event_type: format!("Event{i}"),
                 sequence: i as u64,
                 payload: vec![i as u8],
             };
