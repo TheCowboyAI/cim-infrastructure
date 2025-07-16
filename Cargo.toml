@@ -8,7 +8,7 @@ license = "MIT OR Apache-2.0"
 
 [dependencies]
 # Internal dependencies
-cim-domain = { path = "../cim-domain" }
+cim-domain = { git = "https://github.com/TheCowboyAI/cim-domain.git", branch = "main" }
 
 # External dependencies
 async-nats = "0.38"
