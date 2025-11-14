@@ -9,7 +9,7 @@ repository = "https://github.com/thecowboyai/cim-infrastructure"
 
 [dependencies]
 # CIM dependencies
-cim-domain-infrastructure = { path = "../cim-domain-infrastructure" }
+cim-domain-infrastructure = { git = "https://github.com/TheCowboyAI/cim-domain-infrastructure.git", branch = "main" }
 cim-infrastructure-nats = { path = "../cim-infrastructure-nats" }
 
 # Neo4j

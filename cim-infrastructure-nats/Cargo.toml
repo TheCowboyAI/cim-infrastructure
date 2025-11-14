@@ -16,7 +16,7 @@ chrono = { workspace = true }
 thiserror = { workspace = true }
 
 # Domain dependencies
-cim-domain-infrastructure = { path = "../cim-domain-infrastructure" }
+cim-domain-infrastructure = { git = "https://github.com/TheCowboyAI/cim-domain-infrastructure.git", branch = "main" }
 
 # NATS dependencies
 async-nats = "0.33"
