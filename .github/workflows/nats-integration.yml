@@ -1,0 +1,141 @@
+name: NATS Integration Tests
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+  schedule:
+    # Run daily at 2 AM UTC
+    - cron: '0 2 * * *'
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  NATS_URL: nats://localhost:4222
+
+jobs:
+  nats-integration:
+    name: NATS Integration Tests
+    runs-on: ubuntu-latest
+
+    services:
+      nats:
+        image: nats:latest
+        ports:
+          - 4222:4222
+          - 8222:8222
+        options: >-
+          --health-cmd "wget -q --spider http://localhost:8222/healthz || exit 1"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+        # Start NATS with JetStream enabled
+        env:
+          NATS_ARGS: "-js -m 8222"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-nats-integration-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Wait for NATS to be ready
+        run: |
+          echo "Waiting for NATS server to be ready..."
+          timeout 30 bash -c 'until curl -s http://localhost:8222/healthz > /dev/null; do sleep 1; done'
+          echo "NATS server is ready!"
+
+      - name: Verify NATS connectivity
+        run: |
+          curl -s http://localhost:8222/varz | jq '.version' || echo "NATS server info not available"
+
+      - name: Run NATS integration tests
+        run: |
+          # Run the ignored integration tests for cim-infrastructure-nats
+          cargo test -p cim-infrastructure-nats --test integration_test -- --ignored --test-threads=1
+        env:
+          NATS_URL: nats://localhost:4222
+
+      - name: Show NATS server stats
+        if: always()
+        run: |
+          echo "=== NATS Server Statistics ==="
+          curl -s http://localhost:8222/varz | jq '.' || echo "Stats not available"
+
+  nats-cluster-simulation:
+    name: NATS Cluster Simulation
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install NATS Server
+        run: |
+          curl -L https://github.com/nats-io/nats-server/releases/download/v2.10.7/nats-server-v2.10.7-linux-amd64.tar.gz | tar xz
+          sudo mv nats-server-v2.10.7-linux-amd64/nats-server /usr/local/bin/
+          nats-server --version
+
+      - name: Start NATS cluster (3 nodes)
+        run: |
+          # Start first node
+          nats-server -p 4222 -m 8222 -js -store_dir /tmp/nats1 -cluster nats://0.0.0.0:6222 -routes nats://localhost:6223,nats://localhost:6224 &
+
+          # Start second node
+          nats-server -p 4223 -m 8223 -js -store_dir /tmp/nats2 -cluster nats://0.0.0.0:6223 -routes nats://localhost:6222,nats://localhost:6224 &
+
+          # Start third node
+          nats-server -p 4224 -m 8224 -js -store_dir /tmp/nats3 -cluster nats://0.0.0.0:6224 -routes nats://localhost:6222,nats://localhost:6223 &
+
+          # Wait for cluster to form
+          sleep 5
+          echo "NATS cluster started"
+
+      - name: Verify cluster formation
+        run: |
+          curl -s http://localhost:8222/routez | jq '.routes | length'
+          echo "Cluster routes verified"
+
+      - name: Cache dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-nats-cluster-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Run tests against cluster
+        run: |
+          # Run tests with first node
+          NATS_URL=nats://localhost:4222 cargo test -p cim-infrastructure-nats --test integration_test -- --ignored --test-threads=1
+
+      - name: Show cluster statistics
+        if: always()
+        run: |
+          echo "=== Node 1 Statistics ==="
+          curl -s http://localhost:8222/varz | jq '.cluster' || true
+          echo "=== Node 2 Statistics ==="
+          curl -s http://localhost:8223/varz | jq '.cluster' || true
+          echo "=== Node 3 Statistics ==="
+          curl -s http://localhost:8224/varz | jq '.cluster' || true
+
+      - name: Cleanup
+        if: always()
+        run: |
+          killall nats-server || true
+          rm -rf /tmp/nats*

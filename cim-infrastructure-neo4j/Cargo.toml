@@ -1,0 +1,38 @@
+[package]
+name = "cim-infrastructure-neo4j"
+version = "0.1.0"
+edition = "2021"
+authors = ["Cowboy AI, LLC"]
+license = "MIT OR Apache-2.0"
+description = "Neo4j graph projection for CIM Infrastructure events"
+repository = "https://github.com/thecowboyai/cim-infrastructure"
+
+[dependencies]
+# CIM dependencies
+cim-domain-infrastructure = { path = "../cim-domain-infrastructure" }
+cim-infrastructure-nats = { path = "../cim-infrastructure-nats" }
+
+# Neo4j
+neo4rs = "0.7"
+
+# Async runtime
+tokio = { workspace = true }
+async-nats = { workspace = true }
+
+# Serialization
+serde = { workspace = true }
+serde_json = { workspace = true }
+
+# Utilities
+uuid = { workspace = true }
+chrono = { workspace = true }
+thiserror = { workspace = true }
+tracing = "0.1"
+tracing-subscriber = "0.3"
+futures = "0.3"
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[features]
+default = []

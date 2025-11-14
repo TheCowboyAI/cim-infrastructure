@@ -1,0 +1,35 @@
+[workspace]
+members = [
+    "cim-domain-infrastructure", "cim-infrastructure-nats", "cim-infrastructure-neo4j",
+]
+resolver = "2"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+authors = ["Cowboy AI, LLC <dev@thecowboy.ai>"]
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/thecowboyai/cim-infrastructure"
+homepage = "https://github.com/thecowboyai/cim-infrastructure"
+
+[workspace.dependencies]
+# CIM core modules (via path dependencies)
+cim-domain = { path = "../cim-domain" }
+cim-domain-policy = { path = "../cim-domain-policy" }
+cim-graph = { path = "../cim-graph" }
+
+# Shared dependencies across all infrastructure modules
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+uuid = { version = "1.11", features = ["v4", "v7", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
+thiserror = "1.0"
+
+# Async runtime and messaging
+tokio = { version = "1.40", features = ["full"] }
+async-nats = "0.33"
+
+# Testing
+tokio-test = "0.4"
+pretty_assertions = "1.4"
+test-case = "3.3"
