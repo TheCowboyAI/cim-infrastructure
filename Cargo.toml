@@ -1,6 +1,7 @@
 [workspace]
 members = [
-    "cim-infrastructure-nats", "cim-infrastructure-neo4j",
+    "cim-infrastructure-nats",
+    "cim-infrastructure-neo4j",
 ]
 resolver = "2"
 
