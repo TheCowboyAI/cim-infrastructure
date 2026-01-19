@@ -1,36 +1,54 @@
-[workspace]
-members = [
-    "cim-infrastructure-nats",
-    "cim-infrastructure-neo4j",
-]
-resolver = "2"
-
-[workspace.package]
+[package]
+name = "cim-infrastructure"
 version = "0.1.0"
 edition = "2021"
 authors = ["Cowboy AI, LLC <dev@thecowboy.ai>"]
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/thecowboyai/cim-infrastructure"
-homepage = "https://github.com/thecowboyai/cim-infrastructure"
+description = "Infrastructure components for the Composable Information Machine"
+keywords = ["cim", "nats", "infrastructure", "messaging"]
+categories = ["network-programming", "asynchronous"]
 
-[workspace.dependencies]
-# CIM core modules (via path dependencies)
+[features]
+default = []
+neo4j = ["dep:neo4rs"]
+netbox = ["dep:reqwest"]
+
+[dependencies]
+# CIM Core Dependencies
 cim-domain = { path = "../cim-domain" }
-cim-domain-policy = { path = "../cim-domain-policy" }
-cim-graph = { path = "../cim-graph" }
-
-# Shared dependencies across all infrastructure modules
-serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
-uuid = { version = "1.11", features = ["v4", "v7", "serde"] }
-chrono = { version = "0.4", features = ["serde"] }
-thiserror = "1.0"
+cim-domain-spaces = { path = "../cim-domain-spaces" }
 
 # Async runtime and messaging
-tokio = { version = "1.40", features = ["full"] }
 async-nats = "0.33"
+tokio = { version = "1.40", features = ["full"] }
+futures = "0.3"
 
-# Testing
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+# Time handling
+chrono = { version = "0.4", features = ["serde"] }
+uuid = { version = "1.11", features = ["v7", "serde"] }
+
+# Error handling
+thiserror = "1.0"
+anyhow = "1.0"
+
+# Async traits
+async-trait = "0.1"
+
+# Logging
+tracing = "0.1"
+
+# Optional: Neo4j graph database
+neo4rs = { version = "0.7", optional = true }
+
+# Optional: NetBox DCIM integration
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false, optional = true }
+
+[dev-dependencies]
 tokio-test = "0.4"
 pretty_assertions = "1.4"
 test-case = "3.3"

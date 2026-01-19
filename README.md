@@ -1,264 +1,204 @@
 # CIM Infrastructure
 
-Infrastructure management modules for the CIM (Composable Information Machine) architecture.
+Infrastructure utilities library for the CIM (Composable Information Machine) architecture.
 
 ## Overview
 
-This workspace contains infrastructure-related modules for CIM. Infrastructure modules provide event-sourced domain models and tools for managing compute resources, networks, policies, and configurations.
+This library provides core infrastructure abstractions for CIM systems, including NATS messaging client, error handling, and cross-cutting concerns. It is designed to be used as a dependency by other CIM modules that need to connect to external NATS and Neo4j services.
 
-## Workspace Structure
+## Library Structure
 
 ```
 cim-infrastructure/
-├── Cargo.toml                      # Workspace configuration
+├── Cargo.toml                      # Package configuration
 ├── flake.nix                       # Nix development environment
 ├── README.md                       # This file
-├── cim-domain-infrastructure/      # Infrastructure domain module
-│   ├── src/
-│   │   ├── aggregate.rs           # Event-sourced aggregate root
-│   │   ├── commands.rs            # Command types
-│   │   ├── events.rs              # Domain events
-│   │   ├── value_objects.rs       # Value objects
-│   │   └── lib.rs                 # Public API
-│   ├── Cargo.toml
-│   ├── README.md
-│   └── EXTRACTION.md
-└── cim-infrastructure-nats/        # NATS JetStream integration
-    ├── src/
-    │   ├── event_store.rs         # JetStream event persistence
-    │   ├── publisher.rs           # Event publishing
-    │   ├── subscriber.rs          # Event subscription
-    │   ├── projections.rs         # Read model projections
-    │   ├── subjects.rs            # Subject hierarchy
-    │   └── lib.rs                 # Public API
-    ├── tests/
-    │   └── integration_test.rs    # Real NATS integration tests
-    ├── Cargo.toml
-    └── README.md
+├── src/
+│   ├── lib.rs                     # Public API
+│   ├── nats.rs                    # NATS client abstraction
+│   ├── errors.rs                  # Error types
+└── tests/                          # Integration tests
 ```
 
-## Modules
+## Features
 
-### cim-domain-infrastructure
+### NATS Client
 
-**Status**: ✅ Production Ready
+A high-level NATS client wrapper providing:
+- **Connection Management**: Configurable connection with timeouts
+- **Publish-Subscribe**: Simple pub/sub patterns
+- **Request-Reply**: Synchronous request-reply patterns
+- **Message Handlers**: Trait-based message processing
+- **Typed Messages**: Serde-based serialization/deserialization
 
-Event-sourced infrastructure domain providing:
-- **Compute Resources**: Physical servers, VMs, containers
-- **Network Topology**: Networks, interfaces, connections
-- **Software Management**: Artifacts, configurations, dependencies
-- **Graph Integration**: cim-graph via Kan extension for visualization
-- **Policy Integration**: Optional cim-domain-policy integration (enable with `--features policy`)
+### Error Handling
 
-**Version**: 0.1.0
+Comprehensive error types for:
+- NATS connection and communication errors
+- Serialization/deserialization errors
+- Configuration errors
+- Timeout errors
 
-**Dependencies**:
-- Core: serde, uuid, chrono, thiserror
-- CIM: cim-domain, cim-graph
-- Optional: cim-domain-policy (with "policy" feature)
+### Projection Adapters
 
-See [cim-domain-infrastructure/README.md](./cim-domain-infrastructure/README.md) for details.
+Multiple projection adapters for different read models:
 
-### cim-infrastructure-nats
+**Neo4j** (Graph Database):
+- Feature: `--features neo4j`
+- Purpose: Topology visualization and graph queries
+- See: `src/adapters/neo4j.rs`
 
-**Status**: ✅ Production Ready
-
-NATS JetStream integration for infrastructure events:
-- **Event Store**: JetStream-backed event persistence
-- **Publisher**: Type-safe event publishing to NATS subjects
-- **Subscriber**: Event subscription with async handlers
-- **Projections**: Read model projections from event streams
-- **Subject Hierarchy**: `infrastructure.{aggregate}.{operation}`
-
-**Version**: 0.1.0
-
-**Dependencies**: async-nats, tokio, cim-domain-infrastructure
-
-**NATS Server Required**: Tests require NATS server with JetStream enabled
-
-See [cim-infrastructure-nats/README.md](./cim-infrastructure-nats/README.md) for details.
-
-### cim-infrastructure-neo4j
-
-**Status**: 🚧 In Development
-
-Neo4j graph database projection for infrastructure visualization:
-- **Graph Model**: Nodes (ComputeResource, Network, Interface, Software, Policy)
-- **Relationships**: HAS_INTERFACE, CONNECTED_TO, ROUTES_TO, RUNS, ENFORCES, APPLIES
-- **Event Subscriber**: Real-time projection from NATS events
-- **Specialized Queries**: Routing paths, network topology, policy analysis
-- **Functor Pattern**: Structure-preserving mapping F: Infrastructure → Neo4jGraph
-
-**Version**: 0.1.0
-
-**Dependencies**: neo4rs, async-nats, tokio, cim-domain-infrastructure, cim-infrastructure-nats
-
-**Prerequisites**: Requires Neo4j database instance
-
-See [cim-infrastructure-neo4j/README.md](./cim-infrastructure-neo4j/README.md) for details.
+**NetBox** (DCIM):
+- Feature: `--features netbox`
+- Purpose: Data Center Infrastructure Management
+- Location: `http://10.0.224.131`
+- Documentation: `docs/NETBOX_INTEGRATION.md`
+- See: `src/adapters/netbox.rs`
 
 ## Usage
 
-### As a Workspace Member
-
-When developing infrastructure modules:
-
-```bash
-cd cim-infrastructure
-cargo build          # Build all modules
-cargo test           # Test all modules
-cargo check --workspace
-```
-
 ### As a Dependency
 
-Other CIM modules can depend on infrastructure modules:
+Add to your `Cargo.toml`:
 
 ```toml
-# In your Cargo.toml
 [dependencies]
-cim-domain-infrastructure = { path = "../cim-infrastructure/cim-domain-infrastructure" }
+cim-infrastructure = { path = "../cim-infrastructure" }
 ```
 
 Or when published to crates.io:
 
 ```toml
 [dependencies]
-cim-domain-infrastructure = "0.1"
+cim-infrastructure = "0.1"
 ```
 
-## Current Modules
+### Example: NATS Client
 
-| Module | Version | Status | Description |
-|--------|---------|--------|-------------|
-| cim-domain-infrastructure | 0.1.0 | ✅ Ready | Event-sourced infrastructure domain |
-| cim-infrastructure-nats | 0.1.0 | ✅ Ready | NATS JetStream integration |
-| cim-infrastructure-neo4j | 0.1.0 | 🚧 Dev | Neo4j graph database projection |
+```rust
+use cim_infrastructure::{NatsClient, NatsConfig};
 
-## Saga Orchestration
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Create NATS client configuration
+    let config = NatsConfig {
+        servers: vec!["nats://localhost:4222".to_string()],
+        name: "my-service".to_string(),
+        ..Default::default()
+    };
 
-Complex workflows are handled using `cim-domain::saga` infrastructure - no separate module needed!
+    // Connect to NATS
+    let client = NatsClient::new(config).await?;
 
-See the [network_provisioning_saga.rs](./cim-domain-infrastructure/examples/network_provisioning_saga.rs) example for:
-- Saga as aggregate-of-aggregates pattern
-- Mealy state machine workflow coordination
-- Vector clock causal ordering
-- Multi-step infrastructure provisioning
+    // Publish a message
+    #[derive(serde::Serialize)]
+    struct MyMessage {
+        data: String,
+    }
 
-## Future Modules
+    client.publish("my.subject", &MyMessage {
+        data: "Hello, NATS!".to_string(),
+    }).await?;
 
-Planned infrastructure modules:
+    // Subscribe to messages
+    let mut subscriber = client.subscribe("my.subject").await?;
 
-- **cim-infrastructure-metrics** - Infrastructure monitoring and metrics
-- **cim-infrastructure-projections** - Specialized read model projections
+    Ok(())
+}
+```
 
-## Integration with Other CIM Modules
+### Example: Message Handler
 
-Infrastructure integrates with existing CIM modules through composition:
+```rust
+use cim_infrastructure::{MessageHandler, InfrastructureResult};
+use async_trait::async_trait;
+use serde_json::Value;
 
-- **cim-graph** ✅ - Graph visualization via Kan extension (INTEGRATED)
-- **cim-domain-policy** ✅ - Policy enforcement and evaluation (INTEGRATED, optional feature)
-- **cim-domain-git** - Git repository infrastructure tracking
-- **cim-domain-nix** - Nix configuration and infrastructure as code
+struct MyHandler;
 
-### Using Optional Features
+#[async_trait]
+impl MessageHandler for MyHandler {
+    type Message = Value;
 
-```bash
-# Build with policy integration
-cargo build --features policy
+    async fn handle(&self, message: Self::Message) -> InfrastructureResult<()> {
+        println!("Received: {:?}", message);
+        Ok(())
+    }
 
-# Run tests with policy integration
-cargo test --features policy
-
-# Build all features
-cargo build --all-features
+    fn subject(&self) -> &str {
+        "my.subject"
+    }
+}
 ```
 
 ## Architecture Principles
 
-All infrastructure modules follow these principles:
+This library follows these principles:
 
-1. **Event Sourcing**: All state changes as immutable events
-2. **Domain-Driven Design**: Clear bounded contexts and aggregates
-3. **Framework Independence**: No coupling to specific frameworks
-4. **Type Safety**: Strongly typed value objects with validation
-5. **Testability**: Comprehensive unit and integration tests
+1. **NATS-First Architecture**: All messaging through NATS
+2. **Type Safety**: Strongly typed messages with serde serialization
+3. **Async by Default**: Built on tokio for async operations
+4. **Framework Independence**: Minimal dependencies, composable design
+5. **Testability**: Comprehensive error handling and testing support
 
 ## Development
 
 ### Prerequisites
 
 - Rust 1.70+
-- Cargo workspace support
+- NATS server (for testing)
+- Cargo
 
 ### Building
 
 ```bash
-# Build all modules
-cargo build --workspace
-
-# Build specific module
-cargo build -p cim-domain-infrastructure
+# Build the library
+cargo build
 
 # Build for release
-cargo build --workspace --release
+cargo build --release
+
+# Check without building
+cargo check
 ```
 
 ### Testing
 
 ```bash
-# Test all modules
-cargo test --workspace
+# Run tests (requires NATS server running)
+cargo test
 
-# Test specific module
-cargo test -p cim-domain-infrastructure
-
-# Test with coverage
-cargo tarpaulin --workspace
+# Run with specific test
+cargo test --test integration_test
 ```
 
-### Adding a New Module
+### Running NATS Server for Testing
 
-1. Create module directory:
-   ```bash
-   cargo new --lib cim-infrastructure-newmodule
-   ```
+```bash
+# Using Docker
+docker run -p 4222:4222 nats:latest
 
-2. Add to workspace in `Cargo.toml`:
-   ```toml
-   [workspace]
-   members = [
-       "cim-domain-infrastructure",
-       "cim-infrastructure-newmodule",  # Add here
-   ]
-   ```
+# Or using nats-server directly
+nats-server
+```
 
-3. Use workspace dependencies:
-   ```toml
-   # In new module's Cargo.toml
-   [dependencies]
-   serde = { workspace = true }
-   uuid = { workspace = true }
-   ```
+## Integration with CIM
 
-## Used By
+This library is used by other CIM modules for:
 
-Infrastructure modules are used by:
-
-- **cim-domain-nix** - Nix configuration management
-- **cim-network** - Network topology tools
-- **cim-domain-policy** - Policy management
-- **cim-leaf-*** - Leaf node implementations
+- **NATS Connectivity**: Connect to external NATS servers
+- **Event Messaging**: Publish and subscribe to domain events
+- **Infrastructure Utilities**: Common error handling and abstractions
 
 ## Contributing
 
-Contributions welcome! When adding infrastructure modules:
+Contributions welcome! When contributing:
 
-1. Follow DDD and event sourcing principles
+1. Follow async-first patterns with tokio
 2. Maintain minimal dependencies
 3. Provide comprehensive tests
-4. Document the public API
-5. Include usage examples
+4. Document the public API with examples
+5. Ensure error types are descriptive
 
 ## License
 
