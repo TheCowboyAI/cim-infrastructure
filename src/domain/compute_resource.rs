@@ -8,7 +8,11 @@
 //! - cim-domain-policy (PolicyId)
 //! - cim-domain-spaces (ConceptId for account concepts)
 
-use cim_domain::AggregateId;
+use cim_domain::EntityId;
+use cim_domain_location::LocationMarker;
+use cim_domain_organization::Organization;
+use cim_domain_person::PersonId;
+use cim_domain_policy::PolicyId;
 use cim_domain_spaces::ConceptId;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
@@ -62,7 +66,7 @@ pub enum ComputeResourceError {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ComputeResource {
     /// Aggregate ID (immutable identity)
-    pub id: AggregateId,
+    pub id: EntityId<ComputeResource>,
 
     /// Hostname (DNS-validated value object)
     pub hostname: Hostname,
@@ -72,15 +76,15 @@ pub struct ComputeResource {
 
     /// Organization ownership (reference to cim-domain-organization)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub organization_id: Option<AggregateId>,
+    pub organization_id: Option<EntityId<Organization>>,
 
     /// Physical location (reference to cim-domain-location)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub location_id: Option<AggregateId>,
+    pub location_id: Option<EntityId<LocationMarker>>,
 
     /// Primary contact/owner (reference to cim-domain-person)
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub owner_id: Option<AggregateId>,
+    pub owner_id: Option<PersonId>,
 
     /// Applicable policies (reference to cim-domain-policy)
     /// Infrastructure resources can have multiple policies applied:
@@ -88,7 +92,7 @@ pub struct ComputeResource {
     /// - Compliance policies (regulatory requirements)
     /// - Operational policies (backup schedules, maintenance windows)
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
-    pub policy_ids: Vec<AggregateId>,
+    pub policy_ids: Vec<PolicyId>,
 
     /// Account concept (reference to cim-domain-spaces Concept)
     /// Represents "organization for purpose" relationship in conceptual space
@@ -144,7 +148,7 @@ impl ComputeResource {
         let now = Utc::now();
 
         Ok(Self {
-            id: AggregateId::new(),
+            id: EntityId::new(),
             hostname,
             resource_type,
             organization_id: None,
@@ -174,7 +178,7 @@ impl ComputeResource {
     ///
     /// # Invariant
     /// - Organization ID must reference valid cim-domain-organization aggregate
-    pub fn set_organization(&mut self, org_id: AggregateId) {
+    pub fn set_organization(&mut self, org_id: EntityId<Organization>) {
         self.organization_id = Some(org_id);
         self.updated_at = Utc::now();
     }
@@ -183,7 +187,7 @@ impl ComputeResource {
     ///
     /// # Invariant
     /// - Location ID must reference valid cim-domain-location aggregate
-    pub fn set_location(&mut self, location_id: AggregateId) {
+    pub fn set_location(&mut self, location_id: EntityId<LocationMarker>) {
         self.location_id = Some(location_id);
         self.updated_at = Utc::now();
     }
@@ -192,7 +196,7 @@ impl ComputeResource {
     ///
     /// # Invariant
     /// - Owner ID must reference valid cim-domain-person aggregate
-    pub fn set_owner(&mut self, owner_id: AggregateId) {
+    pub fn set_owner(&mut self, owner_id: PersonId) {
         self.owner_id = Some(owner_id);
         self.updated_at = Utc::now();
     }
@@ -202,7 +206,7 @@ impl ComputeResource {
     /// # Invariant
     /// - Policy ID must reference valid cim-domain-policy aggregate
     /// - Duplicate policies are ignored (idempotent)
-    pub fn add_policy(&mut self, policy_id: AggregateId) {
+    pub fn add_policy(&mut self, policy_id: PolicyId) {
         if !self.policy_ids.contains(&policy_id) {
             self.policy_ids.push(policy_id);
             self.updated_at = Utc::now();
@@ -210,7 +214,7 @@ impl ComputeResource {
     }
 
     /// Remove a policy from this resource
-    pub fn remove_policy(&mut self, policy_id: &AggregateId) -> bool {
+    pub fn remove_policy(&mut self, policy_id: &PolicyId) -> bool {
         if let Some(pos) = self.policy_ids.iter().position(|id| id == policy_id) {
             self.policy_ids.remove(pos);
             self.updated_at = Utc::now();
@@ -221,12 +225,12 @@ impl ComputeResource {
     }
 
     /// Get all applicable policies
-    pub fn get_applicable_policies(&self) -> &[AggregateId] {
+    pub fn get_applicable_policies(&self) -> &[PolicyId] {
         &self.policy_ids
     }
 
     /// Check if resource has a specific policy applied
-    pub fn has_policy(&self, policy_id: &AggregateId) -> bool {
+    pub fn has_policy(&self, policy_id: &PolicyId) -> bool {
         self.policy_ids.contains(policy_id)
     }
 
@@ -348,7 +352,7 @@ impl ComputeResourceBuilder {
         let now = Utc::now();
         Self {
             resource: ComputeResource {
-                id: AggregateId::new(),
+                id: EntityId::new(),
                 hostname,
                 resource_type,
                 organization_id: None,
@@ -367,22 +371,22 @@ impl ComputeResourceBuilder {
         }
     }
 
-    pub fn organization(mut self, org_id: AggregateId) -> Self {
+    pub fn organization(mut self, org_id: EntityId<Organization>) -> Self {
         self.resource.organization_id = Some(org_id);
         self
     }
 
-    pub fn location(mut self, location_id: AggregateId) -> Self {
+    pub fn location(mut self, location_id: EntityId<LocationMarker>) -> Self {
         self.resource.location_id = Some(location_id);
         self
     }
 
-    pub fn owner(mut self, owner_id: AggregateId) -> Self {
+    pub fn owner(mut self, owner_id: PersonId) -> Self {
         self.resource.owner_id = Some(owner_id);
         self
     }
 
-    pub fn policy(mut self, policy_id: AggregateId) -> Self {
+    pub fn policy(mut self, policy_id: PolicyId) -> Self {
         if !self.resource.policy_ids.contains(&policy_id) {
             self.resource.policy_ids.push(policy_id);
         }
@@ -463,13 +467,13 @@ mod tests {
     #[test]
     fn test_builder_pattern() {
         let hostname = Hostname::new("router01.dc1.example.com").unwrap();
-        let org_id = AggregateId::new();
-        let location_id = AggregateId::new();
+        let org_id = EntityId::<Organization>::new();
+        let location_id = EntityId::<LocationMarker>::new();
 
         let resource = ComputeResource::builder(hostname, ResourceType::Router)
             .unwrap()
-            .organization(org_id)
-            .location(location_id)
+            .organization(org_id.clone())
+            .location(location_id.clone())
             .hardware("Cisco", "ASR 1001-X")
             .serial_number("ABC123")
             .metadata("rack", "A01")
@@ -506,11 +510,11 @@ mod tests {
         assert!(!resource.is_physical());
         assert!(!resource.is_multi_tenant());
 
-        let location_id = AggregateId::new();
+        let location_id = EntityId::<LocationMarker>::new();
         resource.set_location(location_id);
         assert!(resource.is_physical());
 
-        let org_id = AggregateId::new();
+        let org_id = EntityId::<Organization>::new();
         resource.set_organization(org_id);
         assert!(resource.is_multi_tenant());
     }

@@ -9,7 +9,11 @@
 //! - cim-domain-spaces (Conceptual Space - Account Concepts)
 
 use anyhow::Result;
-use cim_domain::AggregateId;
+use cim_domain::EntityId;
+use cim_domain_location::LocationMarker;
+use cim_domain_organization::Organization;
+use cim_domain_person::PersonId;
+use cim_domain_policy::PolicyId;
 use cim_domain_spaces::ConceptId;
 use cim_infrastructure::{ComputeResource, Hostname, ResourceType};
 
@@ -20,20 +24,20 @@ fn test_organization_person_location_alignment() -> Result<()> {
     let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
 
     // Add organization
-    let org_id = AggregateId::new();
-    resource.set_organization(org_id);
+    let org_id = EntityId::<Organization>::new();
+    resource.set_organization(org_id.clone());
     assert_eq!(resource.organization_id, Some(org_id));
     assert!(resource.is_multi_tenant());
 
     // Add location
-    let location_id = AggregateId::new();
-    resource.set_location(location_id);
+    let location_id = EntityId::<LocationMarker>::new();
+    resource.set_location(location_id.clone());
     assert_eq!(resource.location_id, Some(location_id));
     assert!(resource.is_physical());
 
     // Add owner
-    let owner_id = AggregateId::new();
-    resource.set_owner(owner_id);
+    let owner_id = PersonId::new();
+    resource.set_owner(owner_id.clone());
     assert_eq!(resource.owner_id, Some(owner_id));
 
     Ok(())
@@ -45,12 +49,12 @@ fn test_policy_alignment() -> Result<()> {
     let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
 
     // Add security policy
-    let security_policy = AggregateId::new();
+    let security_policy = PolicyId::new();
     resource.add_policy(security_policy);
     assert!(resource.has_policy(&security_policy));
 
     // Add compliance policy
-    let compliance_policy = AggregateId::new();
+    let compliance_policy = PolicyId::new();
     resource.add_policy(compliance_policy);
     assert_eq!(resource.get_applicable_policies().len(), 2);
 
@@ -71,7 +75,7 @@ fn test_policy_idempotent_addition() -> Result<()> {
     let hostname = Hostname::new("policy-test-server")?;
     let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
 
-    let policy_id = AggregateId::new();
+    let policy_id = PolicyId::new();
 
     // Add same policy multiple times
     resource.add_policy(policy_id);
@@ -91,10 +95,10 @@ fn test_multiple_policies() -> Result<()> {
     let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
 
     // Add multiple distinct policies
-    let security_policy = AggregateId::new();
-    let compliance_policy = AggregateId::new();
-    let operational_policy = AggregateId::new();
-    let backup_policy = AggregateId::new();
+    let security_policy = PolicyId::new();
+    let compliance_policy = PolicyId::new();
+    let operational_policy = PolicyId::new();
+    let backup_policy = PolicyId::new();
 
     resource.add_policy(security_policy);
     resource.add_policy(compliance_policy);
@@ -120,8 +124,8 @@ fn test_remove_nonexistent_policy() -> Result<()> {
     let hostname = Hostname::new("remove-test-server")?;
     let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
 
-    let policy_id = AggregateId::new();
-    let nonexistent_policy = AggregateId::new();
+    let policy_id = PolicyId::new();
+    let nonexistent_policy = PolicyId::new();
 
     resource.add_policy(policy_id);
 
@@ -186,22 +190,22 @@ fn test_full_domain_integration() -> Result<()> {
     let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
 
     // Organization + Location + Owner (Domain Aggregates)
-    let org_id = AggregateId::new();
-    let location_id = AggregateId::new();
-    let owner_id = AggregateId::new();
+    let org_id = EntityId::<Organization>::new();
+    let location_id = EntityId::<LocationMarker>::new();
+    let owner_id = PersonId::new();
 
-    resource.set_organization(org_id);
-    resource.set_location(location_id);
-    resource.set_owner(owner_id);
+    resource.set_organization(org_id.clone());
+    resource.set_location(location_id.clone());
+    resource.set_owner(owner_id.clone());
 
     // Account Concept (Conceptual Space)
     let account_concept_id = ConceptId::new();
     resource.set_account_concept(account_concept_id)?;
 
     // Policies (Domain Aggregates)
-    let security_policy = AggregateId::new();
-    let compliance_policy = AggregateId::new();
-    let operational_policy = AggregateId::new();
+    let security_policy = PolicyId::new();
+    let compliance_policy = PolicyId::new();
+    let operational_policy = PolicyId::new();
 
     resource.add_policy(security_policy);
     resource.add_policy(compliance_policy);
@@ -241,16 +245,16 @@ fn test_full_domain_integration() -> Result<()> {
 #[test]
 fn test_builder_with_policies_and_concept() -> Result<()> {
     let hostname = Hostname::new("builder-test-server")?;
-    let org_id = AggregateId::new();
-    let location_id = AggregateId::new();
-    let owner_id = AggregateId::new();
-    let policy_id = AggregateId::new();
+    let org_id = EntityId::<Organization>::new();
+    let location_id = EntityId::<LocationMarker>::new();
+    let owner_id = PersonId::new();
+    let policy_id = PolicyId::new();
     let concept_id = ConceptId::new();
 
     let resource = ComputeResource::builder(hostname, ResourceType::PhysicalServer)?
-        .organization(org_id)
-        .location(location_id)
-        .owner(owner_id)
+        .organization(org_id.clone())
+        .location(location_id.clone())
+        .owner(owner_id.clone())
         .policy(policy_id)
         .account_concept(concept_id)
         .hardware("HP", "ProLiant DL380")
@@ -273,9 +277,9 @@ fn test_builder_with_policies_and_concept() -> Result<()> {
 #[test]
 fn test_builder_multiple_policies() -> Result<()> {
     let hostname = Hostname::new("multi-policy-builder")?;
-    let policy1 = AggregateId::new();
-    let policy2 = AggregateId::new();
-    let policy3 = AggregateId::new();
+    let policy1 = PolicyId::new();
+    let policy2 = PolicyId::new();
+    let policy3 = PolicyId::new();
 
     let resource = ComputeResource::builder(hostname, ResourceType::PhysicalServer)?
         .policy(policy1)
@@ -296,15 +300,15 @@ fn test_domain_aggregate_vs_concept_distinction() -> Result<()> {
     let hostname = Hostname::new("distinction-test")?;
     let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
 
-    // Domain Aggregates (referenced by AggregateId)
-    let org_id = AggregateId::new();
-    let person_id = AggregateId::new();
-    let location_id = AggregateId::new();
-    let policy_id = AggregateId::new();
+    // Domain Aggregates (referenced by typed IDs)
+    let org_id = EntityId::<Organization>::new();
+    let person_id = PersonId::new();
+    let location_id = EntityId::<LocationMarker>::new();
+    let policy_id = PolicyId::new();
 
-    resource.set_organization(org_id);
-    resource.set_owner(person_id);
-    resource.set_location(location_id);
+    resource.set_organization(org_id.clone());
+    resource.set_owner(person_id.clone());
+    resource.set_location(location_id.clone());
     resource.add_policy(policy_id);
 
     // Concept (referenced by ConceptId)
@@ -333,11 +337,11 @@ fn test_serialization_with_all_fields() -> Result<()> {
     let hostname = Hostname::new("serialize-test")?;
     let mut resource = ComputeResource::new(hostname, ResourceType::Router)?;
 
-    resource.set_organization(AggregateId::new());
-    resource.set_location(AggregateId::new());
-    resource.set_owner(AggregateId::new());
-    resource.add_policy(AggregateId::new());
-    resource.add_policy(AggregateId::new());
+    resource.set_organization(EntityId::<Organization>::new());
+    resource.set_location(EntityId::<LocationMarker>::new());
+    resource.set_owner(PersonId::new());
+    resource.add_policy(PolicyId::new());
+    resource.add_policy(PolicyId::new());
     resource.set_account_concept(ConceptId::new())?;
     resource.add_metadata("zone", "dmz")?;
     resource.set_hardware(Some("Cisco".into()), Some("ASR 9000".into()), Some("CSC-123".into()));
