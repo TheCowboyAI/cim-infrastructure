@@ -46,6 +46,7 @@
 //! ```
 
 // Core modules
+pub mod domain;
 pub mod errors;
 pub mod jetstream;
 pub mod nats;
@@ -56,6 +57,10 @@ pub mod subjects;
 pub mod adapters;
 
 // Re-export commonly used types
+pub use domain::{
+    ComputeResource, ComputeResourceBuilder, ComputeResourceError, Hostname, HostnameError,
+    IpAddressWithCidr, MacAddress, Mtu, NetworkError, ResourceCategory, ResourceType, VlanId,
+};
 pub use errors::{InfrastructureError, InfrastructureResult};
 pub use jetstream::{
     AckPolicy, ConsumerConfig, DeliverPolicy, JetStreamConfig, RetentionPolicy, StorageType,

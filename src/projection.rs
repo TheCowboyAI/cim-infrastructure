@@ -198,7 +198,7 @@ mod tests {
     #[async_trait]
     impl ProjectionAdapter for MockProjection {
         type Event = String;
-        type Error = Box<dyn std::error::Error + Send + Sync>;
+        type Error = ProjectionError;
 
         async fn project(&mut self, event: Self::Event) -> Result<(), Self::Error> {
             self.events_received.push(event);

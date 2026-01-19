@@ -15,4 +15,4 @@ pub use neo4j::Neo4jProjectionAdapter;
 pub mod netbox;
 
 #[cfg(feature = "netbox")]
-pub use netbox::{NetBoxConfig, NetBoxProjectionAdapter};
+pub use netbox::{InfrastructureEvent, NetBoxConfig, NetBoxProjectionAdapter};

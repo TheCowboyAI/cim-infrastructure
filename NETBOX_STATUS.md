@@ -59,7 +59,85 @@ cargo build --features netbox
 cargo test --features netbox
 ```
 
-### Example Code
+### NATS-to-NetBox Projection (Recommended)
+
+The recommended way to use NetBox projection is via the NATS JetStream integration:
+
+#### 1. Start NATS with JetStream
+```bash
+# Using Docker
+docker run -p 4222:4222 nats:latest -js
+
+# Or using NATS server directly
+nats-server -js
+```
+
+#### 2. Start the NetBox Projector Service
+```bash
+# Source secrets for API token
+source ~/.secrets/cim-env.sh
+
+# Run the projector
+cargo run --bin netbox-projector --features netbox
+```
+
+Environment variables:
+- `NATS_URL` - NATS server URL (default: localhost:4222)
+- `NATS_STREAM` - JetStream stream name (default: INFRASTRUCTURE)
+- `NATS_CONSUMER` - Consumer name (default: netbox-projector)
+- `NETBOX_URL` - NetBox API URL (default: http://10.0.224.131)
+- `NETBOX_API_TOKEN` - NetBox API token (required)
+- `NETBOX_DEFAULT_SITE` - Default site ID (optional)
+
+#### 3. Publish Infrastructure Events
+```rust
+use async_nats::jetstream;
+use cim_infrastructure::adapters::InfrastructureEvent;
+use serde_json::json;
+use uuid::Uuid;
+
+// Connect to NATS
+let client = async_nats::connect("localhost:4222").await?;
+let jetstream = jetstream::new(client);
+
+// Publish an event
+let event = InfrastructureEvent {
+    event_id: Uuid::now_v7(),
+    aggregate_id: Uuid::now_v7(),
+    event_type: "ComputeRegistered".to_string(),
+    data: json!({
+        "hostname": "web01.example.com",
+        "resource_type": "physical_server",
+        "manufacturer": "Dell",
+        "model": "PowerEdge R750"
+    }),
+};
+
+let payload = serde_json::to_vec(&event)?;
+jetstream
+    .publish("infrastructure.compute.registered", payload.into())
+    .await?
+    .await?;
+```
+
+The projector will automatically consume the event and create the corresponding resources in NetBox.
+
+#### 4. Run Integration Test
+```bash
+# Terminal 1: Start NATS
+docker run -p 4222:4222 nats:latest -js
+
+# Terminal 2: Start projector
+source ~/.secrets/cim-env.sh
+cargo run --bin netbox-projector --features netbox
+
+# Terminal 3: Run test
+cargo run --example netbox_integration_test --features netbox
+```
+
+### Direct Adapter Usage (For Testing)
+
+For direct testing without NATS:
 
 ```rust
 use cim_infrastructure::adapters::{NetBoxConfig, NetBoxProjectionAdapter};
@@ -77,7 +155,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut adapter = NetBoxProjectionAdapter::new(config).await?;
     adapter.initialize().await?;
 
-    // Project events...
+    // Project events directly
+    let event = InfrastructureEvent { /* ... */ };
+    adapter.project(event).await?;
 
     Ok(())
 }
@@ -133,11 +213,29 @@ Before production use, you'll need:
 2. Test connectivity and basic projections from cim-infrastructure
 3. Create first device and prefix via API
 
+### ✅ Completed - NATS Integration (2026-01-18)
+1. **All Event Projections Implemented**:
+   - ✅ ComputeRegistered → NetBox Device
+   - ✅ NetworkDefined → NetBox Prefix
+   - ✅ InterfaceAdded → NetBox Interface
+   - ✅ IPAssigned → NetBox IP Address
+
+2. **Idempotency Checks**: All projections check for existing resources before creating
+3. **Device Type/Role Management**: Automatic lookup and creation of device types and roles
+4. **NATS-to-NetBox Projector Service**:
+   - Listens to JetStream infrastructure events
+   - Projects events to NetBox in real-time
+   - Proper error handling and retry logic
+   - Binary: `cargo run --bin netbox-projector --features netbox`
+
+5. **Integration Test**: Complete example demonstrating full workflow
+   - Example: `cargo run --example netbox_integration_test --features netbox`
+
 ### Short Term
-1. Implement remaining event projections (Interface, IP, Cable)
-2. Add idempotency checks (don't create duplicates)
-3. Implement batch operations for better performance
-4. Add comprehensive error handling and retries
+1. Implement ConnectionEstablished → NetBox Cable projection
+2. Add batch operations for better performance
+3. Add monitoring and metrics for projector service
+4. Performance testing and optimization
 
 ### Long Term
 1. Bi-directional sync (NetBox → Events)

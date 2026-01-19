@@ -60,6 +60,7 @@ use std::time::Duration;
 use tracing::{debug, error, info, warn};
 use uuid::Uuid;
 
+use crate::domain::ResourceType;
 use crate::projection::{ProjectionAdapter, ProjectionError};
 
 /// Configuration for NetBox connection
@@ -211,6 +212,161 @@ impl NetBoxProjectionAdapter {
         Ok(Self { config, client })
     }
 
+    /// Get or create a device type in NetBox
+    async fn get_or_create_device_type(
+        &self,
+        manufacturer: &str,
+        model: &str,
+    ) -> Result<i32, ProjectionError> {
+        let url = format!("{}/api/dcim/device-types/", self.config.base_url);
+
+        // Search for existing device type
+        let search_url = format!("{}?model={}", url, urlencoding::encode(model));
+        let response = self.client.get(&search_url).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to search device types: {}", e)))?;
+
+        if response.status().is_success() {
+            let data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(results) = data["results"].as_array() {
+                if !results.is_empty() {
+                    if let Some(id) = results[0]["id"].as_i64() {
+                        debug!("Found existing device type: {} (id: {})", model, id);
+                        return Ok(id as i32);
+                    }
+                }
+            }
+        }
+
+        // Create new device type
+        warn!("Device type '{}' not found, creating placeholder", model);
+        let device_type = serde_json::json!({
+            "manufacturer": {"name": manufacturer, "slug": manufacturer.to_lowercase().replace(" ", "-")},
+            "model": model,
+            "slug": model.to_lowercase().replace(" ", "-")
+        });
+
+        let response = self.client.post(&url).json(&device_type).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to create device type: {}", e)))?;
+
+        if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
+            let data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(id) = data["id"].as_i64() {
+                info!("Created device type: {} (id: {})", model, id);
+                return Ok(id as i32);
+            }
+        }
+
+        Err(ProjectionError::DatabaseError(
+            "Failed to get or create device type".to_string()
+        ))
+    }
+
+    /// Get or create a device role in NetBox based on resource type
+    ///
+    /// Uses the domain ResourceType taxonomy to determine role name, slug, and color.
+    /// This ensures consistent categorization across all infrastructure resources.
+    async fn get_or_create_device_role(
+        &self,
+        resource_type: ResourceType,
+    ) -> Result<i32, ProjectionError> {
+        let url = format!("{}/api/dcim/device-roles/", self.config.base_url);
+        let role_name = resource_type.display_name();
+        let slug = resource_type.as_str().replace('_', "-");
+        let color = resource_type.netbox_color();
+
+        // Search for existing role by name
+        let search_url = format!("{}?name={}", url, urlencoding::encode(role_name));
+        let response = self.client.get(&search_url).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to search device roles: {}", e)))?;
+
+        if response.status().is_success() {
+            let data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(results) = data["results"].as_array() {
+                if !results.is_empty() {
+                    if let Some(id) = results[0]["id"].as_i64() {
+                        debug!(
+                            "Found existing device role: {} ({}) (id: {})",
+                            role_name,
+                            resource_type.category(),
+                            id
+                        );
+                        return Ok(id as i32);
+                    }
+                }
+            }
+        }
+
+        // Create new device role with taxonomy metadata
+        info!(
+            "Device role '{}' not found, creating with color #{} (category: {})",
+            role_name, color, resource_type.category()
+        );
+        let device_role = serde_json::json!({
+            "name": role_name,
+            "slug": slug,
+            "color": color,
+            "description": format!(
+                "{} - Auto-created from CIM ResourceType taxonomy",
+                resource_type.category()
+            )
+        });
+
+        let response = self.client.post(&url).json(&device_role).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to create device role: {}", e)))?;
+
+        if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
+            let data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(id) = data["id"].as_i64() {
+                info!(
+                    "Created device role: {} ({}) (id: {})",
+                    role_name,
+                    resource_type.category(),
+                    id
+                );
+                return Ok(id as i32);
+            }
+        }
+
+        Err(ProjectionError::DatabaseError(
+            "Failed to get or create device role".to_string()
+        ))
+    }
+
+    /// Check if device already exists by name (idempotency)
+    async fn device_exists(&self, hostname: &str) -> Result<Option<i32>, ProjectionError> {
+        let url = format!(
+            "{}/api/dcim/devices/?name={}",
+            self.config.base_url,
+            urlencoding::encode(hostname)
+        );
+
+        let response = self.client.get(&url).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to check device existence: {}", e)))?;
+
+        if response.status().is_success() {
+            let data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(results) = data["results"].as_array() {
+                if !results.is_empty() {
+                    if let Some(id) = results[0]["id"].as_i64() {
+                        return Ok(Some(id as i32));
+                    }
+                }
+            }
+        }
+
+        Ok(None)
+    }
+
     /// Project a compute resource registered event
     async fn project_compute_registered(
         &self,
@@ -220,18 +376,30 @@ impl NetBoxProjectionAdapter {
             .as_str()
             .ok_or_else(|| ProjectionError::InvalidEvent("Missing 'hostname'".to_string()))?;
 
-        let resource_type = data["resource_type"].as_str().unwrap_or("server");
+        // Check idempotency - device already exists?
+        if let Some(device_id) = self.device_exists(hostname).await? {
+            info!("Device '{}' already exists (id: {}), skipping", hostname, device_id);
+            return Ok(());
+        }
 
-        // In real implementation, we'd need to:
-        // 1. Look up or create device_type ID
-        // 2. Look up or create device_role ID
-        // 3. Use configured site ID
+        // Parse resource type from domain taxonomy
+        let resource_type = data["resource_type"]
+            .as_str()
+            .map(ResourceType::from_str)
+            .unwrap_or(ResourceType::Unknown);
+
+        let manufacturer = data["manufacturer"].as_str().unwrap_or("Generic");
+        let model = data["model"].as_str().unwrap_or("Generic Server");
+
+        // Get or create device type and role using domain taxonomy
+        let device_type_id = self.get_or_create_device_type(manufacturer, model).await?;
+        let device_role_id = self.get_or_create_device_role(resource_type).await?;
 
         let device = NetBoxDevice {
             id: None,
             name: hostname.to_string(),
-            device_type: 1, // Placeholder - needs lookup
-            device_role: 1, // Placeholder - needs lookup
+            device_type: device_type_id,
+            device_role: device_role_id,
             site: self.config.default_site_id.unwrap_or(1),
             status: Some("active".to_string()),
             comments: Some(format!("Created from CIM event - type: {}", resource_type)),
@@ -250,7 +418,8 @@ impl NetBoxProjectionAdapter {
             .map_err(|e| ProjectionError::DatabaseError(format!("NetBox API error: {}", e)))?;
 
         if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
-            debug!("Projected ComputeRegistered to NetBox: {}", hostname);
+            info!("Projected ComputeRegistered to NetBox: {} (type: {}, role: {})",
+                  hostname, device_type_id, device_role_id);
             Ok(())
         } else {
             let status = response.status();
@@ -273,6 +442,27 @@ impl NetBoxProjectionAdapter {
 
         let name = data["name"].as_str().unwrap_or("unnamed");
 
+        // Check idempotency - prefix already exists?
+        let search_url = format!(
+            "{}/api/ipam/prefixes/?prefix={}",
+            self.config.base_url,
+            urlencoding::encode(cidr)
+        );
+        let response = self.client.get(&search_url).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to check prefix existence: {}", e)))?;
+
+        if response.status().is_success() {
+            let data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(results) = data["results"].as_array() {
+                if !results.is_empty() {
+                    info!("Prefix '{}' already exists, skipping", cidr);
+                    return Ok(());
+                }
+            }
+        }
+
         let prefix = NetBoxPrefix {
             id: None,
             prefix: cidr.to_string(),
@@ -291,7 +481,191 @@ impl NetBoxProjectionAdapter {
             .map_err(|e| ProjectionError::DatabaseError(format!("NetBox API error: {}", e)))?;
 
         if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
-            debug!("Projected NetworkDefined to NetBox: {}", cidr);
+            info!("Projected NetworkDefined to NetBox: {}", cidr);
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_else(|_| "".to_string());
+            Err(ProjectionError::DatabaseError(format!(
+                "NetBox API returned {}: {}",
+                status, body
+            )))
+        }
+    }
+
+    /// Project an interface added event
+    async fn project_interface_added(
+        &self,
+        data: &serde_json::Value,
+    ) -> Result<(), ProjectionError> {
+        let device_name = data["device"]
+            .as_str()
+            .ok_or_else(|| ProjectionError::InvalidEvent("Missing 'device'".to_string()))?;
+
+        let interface_name = data["name"]
+            .as_str()
+            .ok_or_else(|| ProjectionError::InvalidEvent("Missing 'name'".to_string()))?;
+
+        // Look up device ID by name
+        let device_id = self.device_exists(device_name).await?
+            .ok_or_else(|| ProjectionError::InvalidEvent(
+                format!("Device '{}' not found in NetBox", device_name)
+            ))?;
+
+        // Check idempotency - interface already exists?
+        let search_url = format!(
+            "{}/api/dcim/interfaces/?device_id={}&name={}",
+            self.config.base_url,
+            device_id,
+            urlencoding::encode(interface_name)
+        );
+        let response = self.client.get(&search_url).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to check interface existence: {}", e)))?;
+
+        if response.status().is_success() {
+            let check_data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(results) = check_data["results"].as_array() {
+                if !results.is_empty() {
+                    info!("Interface '{}' on device '{}' already exists, skipping",
+                          interface_name, device_name);
+                    return Ok(());
+                }
+            }
+        }
+
+        let interface_type = data["type"].as_str().unwrap_or("1000base-t");
+        let mac_address = data["mac_address"].as_str().map(|s| s.to_string());
+        let mtu = data["mtu"].as_i64().map(|m| m as i32);
+
+        let interface = NetBoxInterface {
+            id: None,
+            device: device_id,
+            name: interface_name.to_string(),
+            interface_type: interface_type.to_string(),
+            enabled: Some(true),
+            mtu,
+            mac_address,
+            description: data["description"].as_str().map(|s| s.to_string()),
+        };
+
+        let url = format!("{}/api/dcim/interfaces/", self.config.base_url);
+        let response = self
+            .client
+            .post(&url)
+            .json(&interface)
+            .send()
+            .await
+            .map_err(|e| ProjectionError::DatabaseError(format!("NetBox API error: {}", e)))?;
+
+        if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
+            info!("Projected InterfaceAdded to NetBox: {} on {}",
+                  interface_name, device_name);
+            Ok(())
+        } else {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_else(|_| "".to_string());
+            Err(ProjectionError::DatabaseError(format!(
+                "NetBox API returned {}: {}",
+                status, body
+            )))
+        }
+    }
+
+    /// Project an IP assigned event
+    async fn project_ip_assigned(
+        &self,
+        data: &serde_json::Value,
+    ) -> Result<(), ProjectionError> {
+        let address = data["address"]
+            .as_str()
+            .ok_or_else(|| ProjectionError::InvalidEvent("Missing 'address'".to_string()))?;
+
+        // Check idempotency - IP already exists?
+        let search_url = format!(
+            "{}/api/ipam/ip-addresses/?address={}",
+            self.config.base_url,
+            urlencoding::encode(address)
+        );
+        let response = self.client.get(&search_url).send().await
+            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to check IP existence: {}", e)))?;
+
+        if response.status().is_success() {
+            let check_data: serde_json::Value = response.json().await
+                .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+            if let Some(results) = check_data["results"].as_array() {
+                if !results.is_empty() {
+                    info!("IP address '{}' already exists, skipping", address);
+                    return Ok(());
+                }
+            }
+        }
+
+        // Optional: Look up interface if specified
+        let (assigned_object_type, assigned_object_id) = if let Some(interface_name) = data["interface"].as_str() {
+            if let Some(device_name) = data["device"].as_str() {
+                if let Some(device_id) = self.device_exists(device_name).await? {
+                    let iface_url = format!(
+                        "{}/api/dcim/interfaces/?device_id={}&name={}",
+                        self.config.base_url,
+                        device_id,
+                        urlencoding::encode(interface_name)
+                    );
+                    let iface_response = self.client.get(&iface_url).send().await
+                        .map_err(|e| ProjectionError::DatabaseError(format!("Failed to find interface: {}", e)))?;
+
+                    if iface_response.status().is_success() {
+                        let iface_data: serde_json::Value = iface_response.json().await
+                            .map_err(|e| ProjectionError::DatabaseError(format!("Failed to parse response: {}", e)))?;
+
+                        if let Some(results) = iface_data["results"].as_array() {
+                            if !results.is_empty() {
+                                if let Some(iface_id) = results[0]["id"].as_i64() {
+                                    (Some("dcim.interface".to_string()), Some(iface_id as i32))
+                                } else {
+                                    (None, None)
+                                }
+                            } else {
+                                (None, None)
+                            }
+                        } else {
+                            (None, None)
+                        }
+                    } else {
+                        (None, None)
+                    }
+                } else {
+                    (None, None)
+                }
+            } else {
+                (None, None)
+            }
+        } else {
+            (None, None)
+        };
+
+        let ip_address = NetBoxIPAddress {
+            id: None,
+            address: address.to_string(),
+            status: Some("active".to_string()),
+            assigned_object_type,
+            assigned_object_id,
+            description: data["description"].as_str().map(|s| s.to_string()),
+        };
+
+        let url = format!("{}/api/ipam/ip-addresses/", self.config.base_url);
+        let response = self
+            .client
+            .post(&url)
+            .json(&ip_address)
+            .send()
+            .await
+            .map_err(|e| ProjectionError::DatabaseError(format!("NetBox API error: {}", e)))?;
+
+        if response.status() == StatusCode::CREATED || response.status() == StatusCode::OK {
+            info!("Projected IPAssigned to NetBox: {}", address);
             Ok(())
         } else {
             let status = response.status();
@@ -322,6 +696,12 @@ impl ProjectionAdapter for NetBoxProjectionAdapter {
             }
             "NetworkDefined" | "network.defined" => {
                 self.project_network_defined(&event.data).await?
+            }
+            "InterfaceAdded" | "interface.added" => {
+                self.project_interface_added(&event.data).await?
+            }
+            "IPAssigned" | "ip.assigned" => {
+                self.project_ip_assigned(&event.data).await?
             }
             unknown => {
                 warn!("Unknown event type for NetBox projection: {}", unknown);
