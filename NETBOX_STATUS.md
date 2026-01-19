@@ -123,10 +123,15 @@ Before production use, you'll need:
 
 ### Next Steps
 
+### ✅ Completed - API Token Configured
+1. **NetBox API Token**: Obtained and stored in `~/.secrets/cim-env.sh`
+2. **Environment Variable**: `$NETBOX_API_TOKEN` auto-loaded in shell sessions
+3. **API Access Verified**: Token tested and working
+
 ### Immediate
-1. Obtain NetBox API token from 10.0.224.131
-2. Configure NetBox prerequisites (device types, roles, sites)
-3. Test connectivity and basic projections from cim-infrastructure
+1. Configure NetBox prerequisites (device types, roles, sites)
+2. Test connectivity and basic projections from cim-infrastructure
+3. Create first device and prefix via API
 
 ### Short Term
 1. Implement remaining event projections (Interface, IP, Cable)
