@@ -48,6 +48,7 @@
 // Core modules
 pub mod domain;
 pub mod errors;
+pub mod events;
 pub mod jetstream;
 pub mod nats;
 pub mod projection;
@@ -62,6 +63,12 @@ pub use domain::{
     IpAddressWithCidr, MacAddress, Mtu, NetworkError, ResourceCategory, ResourceType, VlanId,
 };
 pub use errors::{InfrastructureError, InfrastructureResult};
+pub use events::{
+    AccountConceptAssigned, AccountConceptCleared, AssetTagAssigned, ComputeResourceEvent,
+    HardwareDetailsSet, InfrastructureEvent, LocationAssigned, MetadataUpdated,
+    OrganizationAssigned, OwnerAssigned, PolicyAdded, PolicyRemoved, ResourceRegistered,
+    ResourceStatus, StatusChanged,
+};
 pub use jetstream::{
     AckPolicy, ConsumerConfig, DeliverPolicy, JetStreamConfig, RetentionPolicy, StorageType,
     StoredEvent,
