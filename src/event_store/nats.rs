@@ -215,30 +215,62 @@ impl EventStore for NatsEventStore {
             .await
             .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
 
-        // Fetch messages
-        let mut messages = consumer
-            .messages()
-            .await
-            .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
-
         let mut events = Vec::new();
 
-        while let Some(message) = messages.next().await {
-            let msg = message.map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+        // Fetch messages in bounded batches to avoid infinite wait
+        // Use a reasonable batch size - most aggregates will have < 10000 events
+        const BATCH_SIZE: usize = 10000;
 
-            // Deserialize StoredEvent
-            let stored_event: StoredEvent<InfrastructureEvent> = serde_json::from_slice(&msg.payload)
-                .map_err(|e| InfrastructureError::Serialization(e.to_string()))?;
+        loop {
+            // Fetch a batch of messages with short timeout
+            // If no messages available, fetch will timeout and we treat that as "no more messages"
+            let messages_result = consumer
+                .fetch()
+                .max_messages(BATCH_SIZE)
+                .expires(std::time::Duration::from_secs(2))
+                .messages()
+                .await;
 
-            // Filter by version
-            if stored_event.sequence >= from_version {
-                events.push(stored_event);
+            // Handle timeout as "no messages available" rather than error
+            let mut messages = match messages_result {
+                Ok(msgs) => msgs,
+                Err(e) => {
+                    // If timeout or "no messages", we're done
+                    let err_msg = e.to_string().to_lowercase();
+                    if err_msg.contains("timeout") || err_msg.contains("timed out") || err_msg.contains("no messages") {
+                        break;
+                    }
+                    // Other errors are real problems
+                    return Err(InfrastructureError::NatsConnection(e.to_string()));
+                }
+            };
+
+            let mut batch_count = 0;
+
+            while let Some(message) = messages.next().await {
+                let msg = message.map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+
+                // Deserialize StoredEvent
+                let stored_event: StoredEvent<InfrastructureEvent> = serde_json::from_slice(&msg.payload)
+                    .map_err(|e| InfrastructureError::Serialization(e.to_string()))?;
+
+                // Filter by version
+                if stored_event.sequence >= from_version {
+                    events.push(stored_event);
+                }
+
+                // Acknowledge message
+                msg.ack()
+                    .await
+                    .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+
+                batch_count += 1;
             }
 
-            // Acknowledge message
-            msg.ack()
-                .await
-                .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+            // If we got fewer messages than batch size, we've read all available events
+            if batch_count < BATCH_SIZE {
+                break;
+            }
         }
 
         // Sort by sequence to ensure ordering
@@ -261,30 +293,61 @@ impl EventStore for NatsEventStore {
             .await
             .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
 
-        // Fetch messages
-        let mut messages = consumer
-            .messages()
-            .await
-            .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
-
         let mut events = Vec::new();
 
-        while let Some(message) = messages.next().await {
-            let msg = message.map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+        // Fetch messages in bounded batches to avoid infinite wait
+        const BATCH_SIZE: usize = 10000;
 
-            // Deserialize StoredEvent
-            let stored_event: StoredEvent<InfrastructureEvent> = serde_json::from_slice(&msg.payload)
-                .map_err(|e| InfrastructureError::Serialization(e.to_string()))?;
+        loop {
+            // Fetch a batch of messages with short timeout
+            // If no messages available, fetch will timeout and we treat that as "no more messages"
+            let messages_result = consumer
+                .fetch()
+                .max_messages(BATCH_SIZE)
+                .expires(std::time::Duration::from_secs(2))
+                .messages()
+                .await;
 
-            // Filter by correlation_id
-            if stored_event.correlation_id == correlation_id {
-                events.push(stored_event);
+            // Handle timeout as "no messages available" rather than error
+            let mut messages = match messages_result {
+                Ok(msgs) => msgs,
+                Err(e) => {
+                    // If timeout or "no messages", we're done
+                    let err_msg = e.to_string().to_lowercase();
+                    if err_msg.contains("timeout") || err_msg.contains("timed out") || err_msg.contains("no messages") {
+                        break;
+                    }
+                    // Other errors are real problems
+                    return Err(InfrastructureError::NatsConnection(e.to_string()));
+                }
+            };
+
+            let mut batch_count = 0;
+
+            while let Some(message) = messages.next().await {
+                let msg = message.map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+
+                // Deserialize StoredEvent
+                let stored_event: StoredEvent<InfrastructureEvent> = serde_json::from_slice(&msg.payload)
+                    .map_err(|e| InfrastructureError::Serialization(e.to_string()))?;
+
+                // Filter by correlation_id
+                if stored_event.correlation_id == correlation_id {
+                    events.push(stored_event);
+                }
+
+                // Acknowledge message
+                msg.ack()
+                    .await
+                    .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+
+                batch_count += 1;
             }
 
-            // Acknowledge message
-            msg.ack()
-                .await
-                .map_err(|e| InfrastructureError::NatsConnection(e.to_string()))?;
+            // If we got fewer messages than batch size, we've read all available events
+            if batch_count < BATCH_SIZE {
+                break;
+            }
         }
 
         // Sort by timestamp for chronological order
