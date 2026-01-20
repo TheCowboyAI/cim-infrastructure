@@ -57,10 +57,11 @@
 //!
 //! - [`infrastructure`] - Top-level polymorphic event envelope
 //! - [`compute_resource`] - ComputeResource aggregate events
-//! - [`versioning`] (future) - Event version migration infrastructure
+//! - [`versioning`] - Event version migration infrastructure
 
 pub mod compute_resource;
 pub mod infrastructure;
+pub mod versioning;
 
 // Re-export commonly used types
 pub use compute_resource::{
@@ -69,3 +70,7 @@ pub use compute_resource::{
     PolicyAdded, PolicyRemoved, ResourceRegistered, ResourceStatus, StatusChanged,
 };
 pub use infrastructure::InfrastructureEvent;
+pub use versioning::{
+    EventVersionInfo, UpcastError, Upcaster, UpcasterChain,
+    get_event_version, set_event_version,
+};

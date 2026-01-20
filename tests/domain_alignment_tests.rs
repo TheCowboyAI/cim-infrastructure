@@ -363,3 +363,241 @@ fn test_serialization_with_all_fields() -> Result<()> {
 
     Ok(())
 }
+
+// =========================================================================
+// VitalConcept Projection Tests (cim-domain-spaces v0.9.7+ integration)
+// =========================================================================
+
+#[test]
+fn test_compute_resource_to_vital_concept() -> Result<()> {
+    let hostname = Hostname::new("web-server01")?;
+    let resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
+
+    // Project to VitalConcept
+    let concept = resource.to_vital_concept();
+
+    // Verify concept properties
+    assert_eq!(concept.name, "web-server01");
+    assert!(concept.description.contains("Physical Server"));
+    assert_eq!(concept.position.len(), 5); // 5-dimensional space
+
+    // Verify dimensions are valid (0.0-1.0 range)
+    for &value in &concept.position {
+        assert!(value >= 0.0 && value <= 1.0, "Dimension value {} out of range", value);
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_vital_concept_with_organization() -> Result<()> {
+    let hostname = Hostname::new("db-server01")?;
+    let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
+
+    let org_id = EntityId::<Organization>::new();
+    resource.set_organization(org_id.clone());
+
+    // Project to VitalConcept
+    let concept = resource.to_vital_concept();
+
+    // Description should include organization reference
+    assert!(concept.description.contains("Organization"));
+    assert!(concept.description.contains(&org_id.to_string()));
+
+    Ok(())
+}
+
+#[test]
+fn test_vital_concept_dimensions_by_resource_type() -> Result<()> {
+    // Test different resource types have different dimensional positions
+
+    // Physical server - high scale (0.9)
+    let physical_server = ComputeResource::new(
+        Hostname::new("physical01")?,
+        ResourceType::PhysicalServer,
+    )?;
+    let physical_concept = physical_server.to_vital_concept();
+    let physical_scale = physical_concept.position[0]; // First dimension is scale
+    assert!(physical_scale > 0.8, "Physical server should have high scale");
+
+    // Virtual machine - medium scale (0.5)
+    let vm = ComputeResource::new(
+        Hostname::new("vm01")?,
+        ResourceType::VirtualMachine,
+    )?;
+    let vm_concept = vm.to_vital_concept();
+    let vm_scale = vm_concept.position[0];
+    assert!(vm_scale < physical_scale, "VM should have lower scale than physical");
+    assert!(vm_scale > 0.4 && vm_scale < 0.6, "VM scale should be around 0.5");
+
+    // Container host - higher than VM (0.7)
+    let container = ComputeResource::new(
+        Hostname::new("container01")?,
+        ResourceType::ContainerHost,
+    )?;
+    let container_concept = container.to_vital_concept();
+    let container_scale = container_concept.position[0];
+    assert!(container_scale > vm_scale, "Container host should have higher scale than VM");
+    assert!(container_scale > 0.6 && container_scale < 0.8, "Container scale should be around 0.7");
+
+    Ok(())
+}
+
+#[test]
+fn test_vital_concept_complexity_dimension() -> Result<()> {
+    let hostname = Hostname::new("complex-server")?;
+    let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
+
+    // Simple resource - low complexity
+    let simple_concept = resource.to_vital_concept();
+    let simple_complexity = simple_concept.position[1]; // Second dimension is complexity
+
+    // Add metadata and policies to increase complexity
+    resource.add_metadata("role", "database")?;
+    resource.add_metadata("environment", "production")?;
+    resource.add_metadata("tier", "critical")?;
+    resource.add_policy(PolicyId::new());
+    resource.add_policy(PolicyId::new());
+    resource.add_policy(PolicyId::new());
+
+    let complex_concept = resource.to_vital_concept();
+    let complex_complexity = complex_concept.position[1];
+
+    // Complexity should increase with metadata and policies
+    assert!(complex_complexity > simple_complexity, "Complexity should increase with metadata and policies");
+
+    Ok(())
+}
+
+#[test]
+fn test_vital_concept_reliability_dimension() -> Result<()> {
+    let hostname = Hostname::new("reliable-server")?;
+    let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
+
+    // Base reliability
+    let base_concept = resource.to_vital_concept();
+    let base_reliability = base_concept.position[2]; // Third dimension is reliability
+
+    // Add location, organization, owner, policies
+    resource.set_location(EntityId::<LocationMarker>::new());
+    resource.set_organization(EntityId::<Organization>::new());
+    resource.set_owner(PersonId::new());
+    resource.add_policy(PolicyId::new());
+
+    let enhanced_concept = resource.to_vital_concept();
+    let enhanced_reliability = enhanced_concept.position[2];
+
+    // Reliability should increase with proper governance
+    assert!(enhanced_reliability > base_reliability, "Reliability should increase with location, org, owner, and policies");
+
+    Ok(())
+}
+
+#[test]
+fn test_vital_concept_serialization() -> Result<()> {
+    let hostname = Hostname::new("api-server01")?;
+    let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
+
+    resource.set_organization(EntityId::<Organization>::new());
+    resource.add_metadata("role", "api")?;
+
+    // Project to VitalConcept
+    let concept = resource.to_vital_concept();
+
+    // Serialize to JSON
+    let json = serde_json::to_string_pretty(&concept)?;
+    println!("VitalConcept JSON:\n{}", json);
+
+    // Deserialize back
+    let deserialized: cim_domain_spaces::base_concepts::VitalConcept = serde_json::from_str(&json)?;
+
+    // Verify core properties
+    assert_eq!(deserialized.name, concept.name);
+    assert_eq!(deserialized.description, concept.description);
+
+    // Verify positions are approximately equal (floating point precision)
+    assert_eq!(deserialized.position.len(), concept.position.len());
+    for (i, (&expected, &actual)) in concept.position.iter().zip(&deserialized.position).enumerate() {
+        assert!(
+            (expected - actual).abs() < 0.0001,
+            "Position dimension {} differs: expected {}, got {}",
+            i,
+            expected,
+            actual
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_vital_concept_complete_integration() -> Result<()> {
+    // Create a fully-configured resource
+    let hostname = Hostname::new("prod-db-primary")?;
+    let mut resource = ComputeResource::new(hostname, ResourceType::PhysicalServer)?;
+
+    // Full domain integration
+    let org_id = EntityId::<Organization>::new();
+    let location_id = EntityId::<LocationMarker>::new();
+    let owner_id = PersonId::new();
+    let policy1 = PolicyId::new();
+    let policy2 = PolicyId::new();
+    let account_concept = ConceptId::new();
+
+    resource.set_organization(org_id.clone());
+    resource.set_location(location_id.clone());
+    resource.set_owner(owner_id.clone());
+    resource.add_policy(policy1);
+    resource.add_policy(policy2);
+    resource.set_account_concept(account_concept)?;
+
+    resource.add_metadata("role", "primary_database")?;
+    resource.add_metadata("environment", "production")?;
+    resource.add_metadata("tier", "critical")?;
+    resource.add_metadata("backup_frequency", "hourly")?;
+
+    resource.set_hardware(
+        Some("Dell".into()),
+        Some("PowerEdge R740".into()),
+        Some("SN-DB-001".into()),
+    );
+
+    // Project to VitalConcept
+    let concept = resource.to_vital_concept();
+
+    // Verify rich conceptual representation
+    assert_eq!(concept.name, "prod-db-primary");
+    assert!(concept.description.contains("Physical Server"));
+    assert!(concept.description.contains(&org_id.to_string()));
+
+    // Verify all 5 dimensions are present and valid
+    assert_eq!(concept.position.len(), 5);
+    for (idx, &value) in concept.position.iter().enumerate() {
+        assert!(
+            value >= 0.0 && value <= 1.0,
+            "Dimension {} value {} out of range",
+            idx,
+            value
+        );
+    }
+
+    // High reliability due to full governance
+    let reliability = concept.position[2];
+    assert!(reliability > 0.9, "Fully configured resource should have high reliability");
+
+    // High complexity due to rich metadata
+    let complexity = concept.position[1];
+    assert!(complexity > 0.6, "Rich metadata should result in higher complexity");
+
+    println!("Complete VitalConcept:");
+    println!("  Name: {}", concept.name);
+    println!("  Description: {}", concept.description);
+    println!("  Dimensions: {:?}", concept.position);
+    println!("    [0] Scale: {:.2}", concept.position[0]);
+    println!("    [1] Complexity: {:.2}", concept.position[1]);
+    println!("    [2] Reliability: {:.2}", concept.position[2]);
+    println!("    [3] Performance: {:.2}", concept.position[3]);
+    println!("    [4] Cost Efficiency: {:.2}", concept.position[4]);
+
+    Ok(())
+}

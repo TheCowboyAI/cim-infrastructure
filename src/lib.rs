@@ -23,10 +23,12 @@
 //! # Modules
 //!
 //! - [`nats`] - NATS client abstraction
-//! - [`jetstream`] - JetStream configuration and event store
+//! - [`jetstream`] - JetStream configuration and stream setup
+//! - [`event_store`] - Event store abstraction and NATS implementation
 //! - [`subjects`] - NATS subject patterns
 //! - [`projection`] - Projection adapter trait (Functor interface)
 //! - [`adapters`] - Concrete projection implementations
+//! - [`frp`] - Functional Reactive Programming abstractions
 //! - [`errors`] - Error types
 //!
 //! # Quick Start
@@ -46,23 +48,30 @@
 //! ```
 
 // Core modules
+pub mod aggregate;
 pub mod domain;
 pub mod errors;
+pub mod event_store;
 pub mod events;
+pub mod frp;
 pub mod jetstream;
 pub mod nats;
 pub mod projection;
+pub mod service;
+pub mod state_machine;
 pub mod subjects;
 
 // Projection adapters (feature-gated)
 pub mod adapters;
 
 // Re-export commonly used types
+pub use aggregate::{ComputeResourceState, apply_event, CommandError};
 pub use domain::{
     ComputeResource, ComputeResourceBuilder, ComputeResourceError, Hostname, HostnameError,
     IpAddressWithCidr, MacAddress, Mtu, NetworkError, ResourceCategory, ResourceType, VlanId,
 };
 pub use errors::{InfrastructureError, InfrastructureResult};
+pub use event_store::{EventMetadata, EventStore, NatsEventStore};
 pub use events::{
     AccountConceptAssigned, AccountConceptCleared, AssetTagAssigned, ComputeResourceEvent,
     HardwareDetailsSet, InfrastructureEvent, LocationAssigned, MetadataUpdated,

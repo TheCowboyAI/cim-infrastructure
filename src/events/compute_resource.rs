@@ -275,11 +275,11 @@ pub enum ResourceStatus {
 
 impl ResourceStatus {
     /// Check if transition to another status is valid
-    pub fn can_transition_to(&self, target: ResourceStatus) -> bool {
+    pub fn can_transition_to(&self, target: &ResourceStatus) -> bool {
         use ResourceStatus::*;
 
         // Same status is always valid (idempotent)
-        if self == &target {
+        if self == target {
             return true;
         }
 
@@ -363,30 +363,30 @@ mod tests {
         use ResourceStatus::*;
 
         // Valid transitions from Provisioning
-        assert!(Provisioning.can_transition_to(Active));
-        assert!(Provisioning.can_transition_to(Decommissioned));
-        assert!(!Provisioning.can_transition_to(Maintenance));
+        assert!(Provisioning.can_transition_to(&Active));
+        assert!(Provisioning.can_transition_to(&Decommissioned));
+        assert!(!Provisioning.can_transition_to(&Maintenance));
 
         // Valid transitions from Active
-        assert!(Active.can_transition_to(Maintenance));
-        assert!(Active.can_transition_to(Decommissioned));
-        assert!(!Active.can_transition_to(Provisioning));
+        assert!(Active.can_transition_to(&Maintenance));
+        assert!(Active.can_transition_to(&Decommissioned));
+        assert!(!Active.can_transition_to(&Provisioning));
 
         // Valid transitions from Maintenance
-        assert!(Maintenance.can_transition_to(Active));
-        assert!(Maintenance.can_transition_to(Decommissioned));
-        assert!(!Maintenance.can_transition_to(Provisioning));
+        assert!(Maintenance.can_transition_to(&Active));
+        assert!(Maintenance.can_transition_to(&Decommissioned));
+        assert!(!Maintenance.can_transition_to(&Provisioning));
 
         // Decommissioned is terminal
-        assert!(!Decommissioned.can_transition_to(Provisioning));
-        assert!(!Decommissioned.can_transition_to(Active));
-        assert!(!Decommissioned.can_transition_to(Maintenance));
+        assert!(!Decommissioned.can_transition_to(&Provisioning));
+        assert!(!Decommissioned.can_transition_to(&Active));
+        assert!(!Decommissioned.can_transition_to(&Maintenance));
 
         // Idempotent (same status)
-        assert!(Provisioning.can_transition_to(Provisioning));
-        assert!(Active.can_transition_to(Active));
-        assert!(Maintenance.can_transition_to(Maintenance));
-        assert!(Decommissioned.can_transition_to(Decommissioned));
+        assert!(Provisioning.can_transition_to(&Provisioning));
+        assert!(Active.can_transition_to(&Active));
+        assert!(Maintenance.can_transition_to(&Maintenance));
+        assert!(Decommissioned.can_transition_to(&Decommissioned));
     }
 
     #[test]

@@ -33,6 +33,10 @@ pub enum InfrastructureError {
     #[error("Operation timed out: {0}")]
     Timeout(String),
 
+    /// Concurrency/version mismatch error (optimistic locking)
+    #[error("Concurrency error: {0}")]
+    ConcurrencyError(String),
+
     /// Generic infrastructure error
     #[error("Infrastructure error: {0}")]
     Generic(String),

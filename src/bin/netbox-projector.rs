@@ -13,6 +13,8 @@
 //! 2. NetBox API accessible (via NETBOX_URL environment variable)
 //! 3. NetBox API token set (via NETBOX_API_TOKEN environment variable)
 
+#![cfg(feature = "netbox")]
+
 use anyhow::{Context, Result};
 use async_nats::jetstream;
 use cim_infrastructure::{

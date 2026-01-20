@@ -28,12 +28,14 @@
 
 pub mod compute_resource;
 pub mod hostname;
+pub mod invariants;
 pub mod network;
 pub mod resource_type;
 
 // Re-export value objects
 pub use compute_resource::{ComputeResource, ComputeResourceBuilder, ComputeResourceError};
 pub use hostname::{Hostname, HostnameError};
+pub use invariants::{ValidationError, ValidationResult};
 pub use network::{
     IpAddressWithCidr, MacAddress, Mtu, NetworkError, VlanId,
 };

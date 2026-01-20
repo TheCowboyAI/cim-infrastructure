@@ -129,7 +129,7 @@ impl InfrastructureRouter {
             }
         }
         
-        Err(format!("No handler found for subject: {message.subject}"))
+        Err(format!("No handler found for subject: {}", message.subject))
     }
 
     pub fn deliver_message(&self, message: RoutingMessage) -> Result<(), String> {

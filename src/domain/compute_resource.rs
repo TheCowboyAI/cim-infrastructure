@@ -13,7 +13,7 @@ use cim_domain_location::LocationMarker;
 use cim_domain_organization::Organization;
 use cim_domain_person::PersonId;
 use cim_domain_policy::PolicyId;
-use cim_domain_spaces::ConceptId;
+use cim_domain_spaces::{ConceptId, base_concepts::VitalConcept};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -339,6 +339,100 @@ impl ComputeResource {
         }
 
         Ok(())
+    }
+
+    /// Project this ComputeResource to a VitalConcept for conceptual space representation
+    ///
+    /// This creates a Resource concept positioned in N-dimensional quality space based on:
+    /// - Resource capacity and utilization
+    /// - Organizational and location context
+    /// - Hardware specifications
+    /// - Policy compliance
+    ///
+    /// The resulting VitalConcept can be used for:
+    /// - Semantic similarity queries
+    /// - Resource clustering and classification
+    /// - Anomaly detection
+    /// - Capacity planning recommendations
+    pub fn to_vital_concept(&self) -> VitalConcept {
+        // Calculate position in N-dimensional space based on resource characteristics
+        // Dimensions: [scale, complexity, reliability, performance, cost_efficiency]
+        let position = self.calculate_conceptual_position();
+
+        // Create VitalConcept using the resource constructor
+        // The constructor automatically sets up:
+        // - Infrastructure domain context
+        // - Resource entity category
+        // - Standard infrastructure dimensions
+        VitalConcept::resource(self.hostname.as_str())
+            .with_description(format!(
+                "Compute resource {} of type {}{}",
+                self.hostname.as_str(),
+                self.resource_type.display_name(),
+                if let Some(org_id) = &self.organization_id {
+                    format!(" (Organization: {})", org_id)
+                } else {
+                    String::new()
+                }
+            ))
+            .with_position(position)
+    }
+
+    /// Calculate N-dimensional position in conceptual space
+    ///
+    /// Dimensions represent quality aspects:
+    /// 1. **Scale**: How large/powerful is this resource? (0.0-1.0)
+    /// 2. **Complexity**: How complex is the configuration? (0.0-1.0)
+    /// 3. **Reliability**: How reliable/stable is it? (0.0-1.0)
+    /// 4. **Performance**: Performance characteristics (0.0-1.0)
+    /// 5. **Cost Efficiency**: Operating cost efficiency (0.0-1.0)
+    fn calculate_conceptual_position(&self) -> Vec<f64> {
+        // Dimension 1: Scale (based on resource type and hardware)
+        let scale = match self.resource_type {
+            ResourceType::PhysicalServer => 0.9,
+            ResourceType::VirtualMachine => 0.5,
+            ResourceType::ContainerHost => 0.7,
+            ResourceType::Hypervisor => 0.8,
+            ResourceType::Router => 0.6,
+            ResourceType::Switch => 0.4,
+            ResourceType::StorageArray => 0.8,
+            _ => 0.5,
+        };
+
+        // Dimension 2: Complexity (based on metadata and policies)
+        let complexity = 0.3 + (self.metadata.len() as f64 * 0.05).min(0.4)
+            + (self.policy_ids.len() as f64 * 0.1).min(0.3);
+
+        // Dimension 3: Reliability (higher if has location, organization, owner)
+        let mut reliability = 0.5;
+        if self.location_id.is_some() {
+            reliability += 0.15;
+        }
+        if self.organization_id.is_some() {
+            reliability += 0.15;
+        }
+        if self.owner_id.is_some() {
+            reliability += 0.1;
+        }
+        if !self.policy_ids.is_empty() {
+            reliability += 0.1;
+        }
+
+        // Dimension 4: Performance (based on resource type)
+        let performance = match self.resource_type {
+            ResourceType::PhysicalServer => 0.95,
+            ResourceType::VirtualMachine => 0.7,
+            ResourceType::ContainerHost => 0.8,
+            ResourceType::Hypervisor => 0.9,
+            ResourceType::Router => 0.85,
+            ResourceType::StorageArray => 0.9,
+            _ => 0.6,
+        };
+
+        // Dimension 5: Cost Efficiency (inversely related to scale)
+        let cost_efficiency = 1.0 - (scale * 0.6);
+
+        vec![scale, complexity, reliability, performance, cost_efficiency]
     }
 }
 
